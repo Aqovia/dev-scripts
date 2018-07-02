@@ -15,10 +15,11 @@ $configFiles | ForEach-Object {
 
         foreach($add in $xmlFile.configuration.appSettings.add) {
             if ($add.key -eq 'ServiceBus') 
-            {                                
-                write-host "File Changed : " $configFile
+            {   
                 $add.value = $connectionString
-                $xmlFile.Save($configFile)               
+                $xmlFile.Save($configFile)  
+                
+                write-host "File Changed : " $configFile            
             }
         } 
     }
@@ -31,9 +32,9 @@ $jsonFiles | ForEach-Object {
 
         if (Get-Member -InputObject $jsonObject -Name "ServiceBus" -MemberType Properties)
         {
-            write-host "File Changed : " $jsonFile
-
             $jsonObject.ServiceBus = $connectionString 
             $jsonObject | ConvertTo-Json | set-content $jsonFile
+
+            write-host "File Changed : " $jsonFile
         }
     }
