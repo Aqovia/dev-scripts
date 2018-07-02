@@ -1,0 +1,152 @@
+﻿[CmdletBinding()]
+Param(
+   [Parameter(Mandatory=$True,Position=1)]
+   [string]$packageName,
+	
+   [Parameter(Mandatory=$True)]
+   [string]$targetVersion,
+	
+   [Parameter(Mandatory=$True)]
+   [string]$branchName
+)
+
+$hasUpdate = $false
+$workingDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath('.\')
+
+#msbuild path
+$MsBuildExe = Resolve-Path "${env:ProgramFiles(x86)}\Microsoft Visual Studio*\MSBuild\*\bin\msbuild.exe" -ErrorAction SilentlyContinue
+
+#install nuget.exe
+$sourceNugetExe = "https://dist.nuget.org/win-x86-commandline/latest/nuget.exe"
+$targetNugetExe = "$workingDir\nuget.exe"
+if(-not (Test-Path -path $targetNugetExe)){
+    Invoke-WebRequest $sourceNugetExe -OutFile $targetNugetExe
+    Set-Alias nuget $targetNugetExe -Scope Global -Verbose
+}
+
+#install xunit runner console.exe
+$xunitConsoleExe = $workingDir+"\xunit.runner.console.*\tools\net452\xunit.console.x86.exe"
+$xUnitNuget = "http://www.nuget.org/api/v2/"
+if(-not (Test-Path -path $xunitConsoleExe)){
+    iex "$targetNugetExe install xunit.runner.console -source $xUnitNuget"
+}
+
+#searching directories
+Get-ChildItem $workingDir -Recurse -Directory | ForEach-Object {
+    $path = $_    
+    $fullPath = $path.FullName
+    $configFiles = Get-ChildItem $path -Recurse -Filter packages.config -ErrorAction SilentlyContinue -Force
+    
+    #if there is a packages.config and if there is a git repo
+    if((($configFiles | measure).Count -gt 0) -and (Test-Path -path $fullPath'\.git')){
+        #fetch and checkout master
+        Write-host 'fetch and checkout master for' $path '...'
+
+        git -C $fullPath fetch -q
+        git -C $fullPath checkout master -q
+
+        #pull
+        Write-host 'pull for' $path '...'
+        git -C $fullPath pull -q
+    
+        #change packages.config files
+        $configFiles | ForEach-Object {
+            $configFile = $_.FullName
+
+            $xmlFile = (Get-Content $configFile) -as [Xml]
+
+            foreach($package in $xmlFile.packages.package) {
+                if ($package.id -eq $packageName -and $package.version -ne $targetVersion){
+                    Write-Host "saving nuget packages.config file..." -ForegroundColor green
+                    $package.version = $targetVersion
+                    $xmlFile.Save($configFile)
+                    $hasUpdate = $true
+                }
+            }
+        }
+
+        if($hasUpdate -eq $true)  {
+            $hasUpdate = $false
+
+            $solutionFile = Get-ChildItem $path -Filter *.sln -ErrorAction SilentlyContinue -Force
+            
+            #restore nuget packages
+            Write-Host "restoring nuget packages for" $solutionFile "..." -ForegroundColor Yellow
+            .\nuget restore $solutionFile.FullName
+
+            #build solution
+            $mArgs = @($solutionFile.FullName, '/t:ReBuild','/p:Configuration=Debug')
+            Write-Host "building" $solutionFile "..." -ForegroundColor Yellow
+
+            $buildOutput = &$MsBuildExe $mArgs
+            if ($buildOutput -notcontains "Build succeeded."){
+        
+                $exceptionList = @()
+                $buildOutput | foreach {
+                    $matchInfo =  [regex]::match($_,'error [a-zA-Z]{2}\d{1,4}')
+
+                    if ($matchInfo.Success)
+                    {
+                        $exception = $buildOutput | Select-String -Pattern $matchInfo.Value -Context 0,0 | Out-String
+                        If ($exceptionList -notcontains $exception){
+                            $exceptionList += $exception
+                        }
+                    }    
+                }
+
+                Throw $exceptionList
+                exit 1
+            }
+            else{
+                Write-Host "build succeeded" -ForegroundColor Green
+            }
+        
+            #run unit tests
+            Write-Host "running unit tests for" $solutionFile "..." -ForegroundColor Yellow
+            $testsPath = $fullPath + '\tests\*\bin\Debug'
+            $assemblies = Get-ChildItem $testsPath -Recurse -Filter *.Tests.dll -ErrorAction SilentlyContinue -Force
+            foreach($assembly in $assemblies){
+                $testOutput = &$xunitConsoleExe $assembly
+            
+                if($testOutput -like "Exception"){
+                    $exceptionList = @()
+
+                    $testOutput | foreach {
+                        $exception = $buildOutput | Select-String -Pattern ".*Exception$" -Context 0,0 | Out-String
+                        If ($exceptionList -notcontains $exception){
+                            $exceptionList += $exception
+                        }
+                    }
+
+                    Throw $exceptionList
+                    exit 1
+                }
+                else{
+                    Write-Host "unit tests succeeded" -ForegroundColor Green
+                }
+            }
+
+            Write-host 'check out branch' $branchName 'for' $path '...'
+            git -C $fullPath checkout -b $branchName
+
+            #commit
+            Write-host 'commit changes for' $path '...'
+            $message = 'Updated '+$packageName+' version to '+$targetVersion
+            git -C $fullPath add .
+            git -C $fullPath commit -m $message
+
+            #push
+            $reply = Read-Host -Prompt "push changes to remote?[y/n]"
+            if ($reply -match "[yY]"){
+                Write-host 'push changes for' $path '...'
+                git -C $fullPath push -u origin $branchName
+            }
+        }
+    }
+}
+
+#remove nuget.exe
+Remove-Item –path $targetNugetExe
+
+#remove xunit folder
+Remove-Item –path $workingDir'\xunit.runner.console.*' –recurse
