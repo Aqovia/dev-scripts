@@ -1,1 +1,2 @@
-# Scripts for automatically generating of development step.
+# dev-scripts
+Scripts for automatically generating of development step.
