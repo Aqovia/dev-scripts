@@ -49,7 +49,7 @@
     }
 
     #install xunit runner console.exe
-    $xunitConsoleExe = $workingDir+"\xunit.runner.console.*\tools\net452\xunit.console.x86.exe"
+    $xunitConsoleExe = $workingDir+"\xunit.runner.console.*\tools\*\xunit.console.x86.exe"
     $xUnitNuget = "http://www.nuget.org/api/v2/"
     if(-not (Test-Path -path $xunitConsoleExe)){
         iex "$targetNugetExe install xunit.runner.console -source $xUnitNuget"
