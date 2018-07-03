@@ -16,8 +16,8 @@
     The name of the branch which is used for pushing changes to remote.
 
     .EXAMPLE
-    Working Directory: E:\dev\Interxion.
-    Aqovia-Nuget-Update Powershell.Deployment 1.2.5.0 Update-PowershellDeployment-nuget-package
+    Working Directory: E:\dev\Interxion
+    Aqovia-Nuget-Update -packageName Powershell.Deployment -targetVersion 1.2.5.0 -branchName Update-PowershellDeployment-nuget-package
 
     .NOTES
     You need to run this function as administrator.
