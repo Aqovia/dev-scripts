@@ -22,6 +22,16 @@ $configFiles | ForEach-Object {
                 write-host "File Changed : " $configFile            
             }
         } 
+
+        foreach($add in $xmlFile.connectionStrings.add) {
+            if ($add.name -eq 'EpiServerServiceBus') 
+            {   
+                $add.connectionString = $connectionString
+                $xmlFile.Save($configFile)  
+                
+                write-host "File Changed : " $configFile            
+            }
+        }
     }
 
 $jsonFiles = Get-ChildItem -Path $directoryPath -Recurse  -Include *configuration.json
