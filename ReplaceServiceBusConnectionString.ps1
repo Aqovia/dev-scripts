@@ -1,3 +1,15 @@
+<#
+
+.SYNOPSIS
+
+Allows you to update service bus connection strings in the directory (and sub-directories) supplied.
+
+.DESCRIPTION
+
+Updates the service connection string in .config and .json files 
+
+#>
+
 [CmdletBinding()]
 Param(
    [Parameter(Mandatory=$True,Position=1)]
