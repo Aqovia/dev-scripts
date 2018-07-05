@@ -1,3 +1,4 @@
+function Aqovia-ServiceBus-ConnectionString-Update{
 <#
 
 .SYNOPSIS
@@ -7,6 +8,10 @@ Allows you to update service bus connection strings in the directory (and sub-di
 .DESCRIPTION
 
 Updates the service connection string in .config and .json files 
+
+.EXAMPLE
+    
+    Aqovia-ServiceBus-ConnectionString-Update -directoryPath E:\dev\Interxion -connectionString "Endpoint=sb://inxn-local-janed.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=V4mjurGpYakbBmAb2lcsBvoWMQ4ACtb91Vvk9UOLp7M="
 
 #>
 
@@ -60,3 +65,4 @@ $jsonFiles | ForEach-Object {
             write-host "File Changed : " $jsonFile
         }
     }
+ }
