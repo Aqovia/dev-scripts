@@ -33,7 +33,9 @@
        [Parameter(Mandatory=$True)]
        [string]$branchName
     )
-
+    
+    Get-Date -Format g
+    
     $hasUpdate = $false
     $workingDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath('.\')
 
@@ -56,9 +58,10 @@
     }
 
     #searching directories
-    Get-ChildItem $workingDir -Recurse -Directory | ForEach-Object {
-        $path = $_    
+    Get-ChildItem $workingDir -Recurse -Directory -Depth 3 | where {$_.psiscontainer} | where { (test-path (join-path $_.fullname "*.sln")) } | ForEach-Object {
+        $path = $_
         $fullPath = $path.FullName
+
         $configFiles = Get-ChildItem $path -Recurse -Filter packages.config -ErrorAction SilentlyContinue -Force
     
         #if there is a packages.config and if there is a git repo
@@ -174,4 +177,8 @@
 
     #remove xunit folder
     Remove-Item –path $workingDir'\xunit.runner.console.*' –recurse
+
+    Write-host 'Done!'
+    
+    Get-Date -Format g
 }
