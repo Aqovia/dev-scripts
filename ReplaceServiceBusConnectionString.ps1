@@ -36,9 +36,18 @@ $configFiles | ForEach-Object {
                 $add.value = $connectionString
                 $xmlFile.Save($configFile)  
                 
-                write-host "File Changed : " $configFile            
+                write-host "File Changed (ServiceBus in appSettings): " $configFile            
             }
         } 
+
+        foreach($add in $xmlFile.configuration.connectionStrings.add) {
+            if ($add.name -eq 'ServiceBus'){
+                $add.connectionString = $connectionString
+                $xmlFile.Save($configFile)  
+                    
+                write-host "File Changed (ServiceBus in connectionStrings tag): " $configFile            
+            }
+        }
 
         foreach($add in $xmlFile.connectionStrings.add) {
             if ($add.name -eq 'EpiServerServiceBus') 
@@ -46,7 +55,7 @@ $configFiles | ForEach-Object {
                 $add.connectionString = $connectionString
                 $xmlFile.Save($configFile)  
                 
-                write-host "File Changed : " $configFile            
+                write-host "File Changed (EpiServerServiceBus in connectionStrings file): " $configFile            
             }
         }
     }
