@@ -50,7 +50,7 @@ $Subscription = Get-AzureRMSubscription -SubscriptionName $subscriptionName
 $SubscriptionId = $Subscription.Id
 $TenantId = $Subscription.TenantId
 
-$Application = Get-AzureRmADApplication -DisplayName "Octopus" -First 1
+$Application = Get-AzureRmADApplication -DisplayName "Octopus" | Where-Object { $_.DisplayName -eq "Octopus" } | Select-Object -First 1
 
 $ClientId = $Application.ApplicationId
 
