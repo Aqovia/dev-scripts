@@ -14,6 +14,9 @@
     .PARAMETER branchName
     The name of the branch which is used for pushing changes to remote.
 
+    .PARAMETER addOrRemove
+    add or remove the nuget package. valid values : add, remove
+
     .EXAMPLE
     Working Directory: E:\dev\Interxion
     Aqovia-Nuget-Update -packageName Powershell.Deployment -targetVersion 1.2.5.0 -branchName Update-PowershellDeployment-nuget-package
@@ -26,11 +29,14 @@
        [Parameter(Mandatory=$True,Position=1)]
        [string]$packageName,
 	
-       [Parameter(Mandatory=$True)]
+       [Parameter(Mandatory=$False)]
        [string]$targetVersion,
 	
        [Parameter(Mandatory=$True)]
-       [string]$branchName
+       [string]$branchName,
+
+       [Parameter(Mandatory=$True)]
+       [string]$addOrRemove
     )
     
     Get-Date -Format g
@@ -91,9 +97,19 @@
                 $xmlFile = (Get-Content $configFile) -as [Xml]
 
                 foreach($package in $xmlFile.packages.package) {
-                    if ($package.id -eq $packageName -and $package.version -ne $targetVersion){
+                    if ($package.id -eq $packageName){
                         Write-Host "saving nuget packages.config file..." -ForegroundColor green
-                        $package.version = $targetVersion
+                        if($addOrRemove -eq "add")
+                        {
+                            if($package.version -ne $targetVersion)
+                            {
+                                $package.version = $targetVersion
+                            }
+                        }
+                        if($addOrRemove -eq "remove")
+                        {
+                            $package.ParentNode.RemoveChild($package)
+                        }
                         $xmlFile.Save($configFile)
                         $hasUpdate = $true
                     }
@@ -161,12 +177,23 @@
                     }
                 }
 
-                Write-host 'check out branch' $branchName 'for' $path '...'
-                git -C $fullPath checkout -b $branchName
+                if($gitBranch -ne $branchName)
+                {
+                    Write-host 'check out branch' $branchName 'for' $path '...'
+                    git -C $fullPath checkout -b $branchName
+                }
 
                 #commit
                 Write-host 'commit changes for' $path '...'
-                $message = 'Updated '+$packageName+' version to '+$targetVersion
+                if($addOrRemove -eq "add")
+                {
+                    $message = 'Updated '+$packageName+' version to '+$targetVersion
+                }
+                if($addOrRemove -eq "remove")
+                {
+                    $message = 'Removed '+$packageName
+                }
+                
                 git -C $fullPath add .
                 git -C $fullPath commit -m $message
 
