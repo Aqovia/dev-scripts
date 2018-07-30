@@ -17,6 +17,9 @@
     .PARAMETER addOrRemove
     add or remove the nuget package. valid values : add, remove
 
+    .PARAMETER pushToRemove
+    push changes to remote branch. valid values : y, Y, n, N
+
     .EXAMPLE
     Working Directory: E:\dev\Interxion
     Aqovia-Nuget-Update -packageName Powershell.Deployment -targetVersion 1.2.5.0 -branchName Update-PowershellDeployment-nuget-package
@@ -36,7 +39,10 @@
        [string]$branchName,
 
        [Parameter(Mandatory=$True)]
-       [string]$addOrRemove
+       [string]$addOrRemove,
+
+       [Parameter(Mandatory=$True)]
+       [string]$pushToRemote
     )
     
     Get-Date -Format g
@@ -67,10 +73,12 @@
         $path = $_
         $fullPath = $path.FullName
 
-        $configFiles = Get-ChildItem $path -Recurse -Filter packages.config -ErrorAction SilentlyContinue -Force
+        $packageConfigFiles = Get-ChildItem $path -Recurse -Filter packages.config -ErrorAction SilentlyContinue -Force
+
+        $projectConfigFiles = Get-ChildItem $path -Recurse -Filter *.csproj -ErrorAction SilentlyContinue -Force | Where-Object {(Select-String -InputObject $_ -Pattern 'PackageReference' -Quiet) -eq $true} | ForEach-Object {Write-Output $_; Get-Content $_}
     
-        #if there is a packages.config and if there is a git repo
-        if((($configFiles | measure).Count -gt 0) -and (Test-Path -path $fullPath'\.git')){
+        #if there is a packages.config or project config files with package references, and if there is a git repo
+        if( ((($packageConfigFiles | measure).Count -gt 0) -or (($projectConfigFiles | measure).Count -gt 0)) -and (Test-Path -path $fullPath'\.git')){
             #fetch and checkout master
             Write-host 'fetch and checkout master for' $path '...'
 
@@ -91,14 +99,13 @@
             }
     
             #change packages.config files
-            $configFiles | ForEach-Object {
+            $packageConfigFiles | ForEach-Object {
                 $configFile = $_.FullName
 
                 $xmlFile = (Get-Content $configFile) -as [Xml]
 
                 foreach($package in $xmlFile.packages.package) {
                     if ($package.id -eq $packageName){
-                        Write-Host "saving nuget packages.config file..." -ForegroundColor green
                         if($addOrRemove -eq "add")
                         {
                             if($package.version -ne $targetVersion)
@@ -110,11 +117,39 @@
                         {
                             $package.ParentNode.RemoveChild($package)
                         }
+                        Write-Host "saving nuget packages.config file..." -ForegroundColor green
                         $xmlFile.Save($configFile)
                         $hasUpdate = $true
                     }
                 }
             }
+
+            #change csproj files
+            $projectConfigFiles | ForEach-Object {
+                $configFile = $_.FullName
+
+                $xmlFile = (Get-Content $configFile) -as [Xml]
+
+                foreach($package in $xmlFile.project.itemgroup.packagereference) {
+                    if ($package.include -eq $packageName){
+                        if($addOrRemove -eq "add")
+                        {
+                            if($package.version -ne $targetVersion)
+                            {
+                                $package.version = $targetVersion
+                            }
+                        }
+                        if($addOrRemove -eq "remove")
+                        {
+                            $package.ParentNode.RemoveChild($package)
+                        }
+                        Write-Host "saving csproj file..." -ForegroundColor green
+                        $xmlFile.Save($configFile)
+                        $hasUpdate = $true
+                    }
+                }
+            }
+
 
             if($hasUpdate -eq $true)  {
                 $hasUpdate = $false
@@ -198,8 +233,7 @@
                 git -C $fullPath commit -m $message
 
                 #push
-                $reply = Read-Host -Prompt "push changes to remote?[y/n]"
-                if ($reply -match "[yY]"){
+                if ($pushToRemote -match "[yY]"){
                     Write-host 'push changes for' $path '...'
                     git -C $fullPath push -u origin $branchName
                 }
