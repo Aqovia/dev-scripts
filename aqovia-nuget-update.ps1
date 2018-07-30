@@ -1,4 +1,5 @@
-﻿    <#
+﻿function aqovia-nuget-update{
+    <#
     .SYNOPSIS
     Updates nuget package version in working directory.
 
@@ -250,3 +251,4 @@
     Write-host 'Done!'
     
     Get-Date -Format g
+}
