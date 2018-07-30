@@ -1,5 +1,4 @@
-﻿function Aqovia-Nuget-Update{
-    <#
+﻿    <#
     .SYNOPSIS
     Updates nuget package version in working directory.
 
@@ -69,12 +68,21 @@
             #fetch and checkout master
             Write-host 'fetch and checkout master for' $path '...'
 
-            git -C $fullPath fetch -q
-            git -C $fullPath checkout master -q
+            $gitBranch = (((git status) -split '\n')[0]).Substring(10)
 
-            #pull
-            Write-host 'pull for' $path '...'
-            git -C $fullPath pull -q
+            if($gitBranch -ne $branchName)
+            {
+                git -C $fullPath fetch -q
+                git -C $fullPath checkout master -q
+
+                #pull
+                Write-host 'pull for' $path '...'
+                git -C $fullPath pull -q
+            }
+            else
+            {
+                Write-host "Branch " $branchName " already exists"
+            }
     
             #change packages.config files
             $configFiles | ForEach-Object {
@@ -181,4 +189,3 @@
     Write-host 'Done!'
     
     Get-Date -Format g
-}
