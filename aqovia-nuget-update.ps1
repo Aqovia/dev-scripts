@@ -15,15 +15,18 @@
     .PARAMETER branchName
     The name of the branch which is used for pushing changes to remote.
 
-    .PARAMETER addOrRemove
+    .PARAMETER updateOrRemove
     add or remove the nuget package. valid values : add, remove
 
     .PARAMETER pushToRemove
     push changes to remote branch. valid values : y, Y, n, N
 
+    .PARAMETER build
+    build and test. valid values : y, Y, n, N
+
     .EXAMPLE
     Working Directory: E:\dev\Interxion
-    Aqovia-Nuget-Update -packageName Powershell.Deployment -targetVersion 1.2.5.0 -branchName Update-PowershellDeployment-nuget-package
+    Aqovia-Nuget-Update -packageName Powershell.Deployment -targetVersion 1.2.5.0 -branchName Update-PowershellDeployment-nuget-package -updateOrRemove update -pushToRemove N -build N
 
     .NOTES
     You need to run this function as administrator.
@@ -40,12 +43,21 @@
        [string]$branchName,
 
        [Parameter(Mandatory=$True)]
-       [string]$addOrRemove,
+       [string]$updateOrRemove,
 
        [Parameter(Mandatory=$True)]
-       [string]$pushToRemote
+       [string]$pushToRemote,
+
+       [Parameter(Mandatory=$True)]
+       [string]$build
     )
     
+    if($targetVersion -eq "" -and $updateOrRemove -eq "update")
+    {
+        Write-Host "If -updateOrRemove = update, then you must supply a -targetVersion"
+        exit
+    }
+
     Get-Date -Format g
     
     $hasUpdate = $false
@@ -76,7 +88,7 @@
 
         $packageConfigFiles = Get-ChildItem $path -Recurse -Filter packages.config -ErrorAction SilentlyContinue -Force
 
-        $projectConfigFiles = Get-ChildItem $path -Recurse -Filter *.csproj -ErrorAction SilentlyContinue -Force | Where-Object {(Select-String -InputObject $_ -Pattern 'PackageReference' -Quiet) -eq $true} | ForEach-Object {Write-Output $_; Get-Content $_}
+        $projectConfigFiles = Get-ChildItem $path -Recurse -Filter *.csproj -ErrorAction SilentlyContinue -Force | Where-Object {(Select-String -InputObject $_ -Pattern 'PackageReference' -Quiet) -eq $true}
     
         #if there is a packages.config or project config files with package references, and if there is a git repo
         if( ((($packageConfigFiles | measure).Count -gt 0) -or (($projectConfigFiles | measure).Count -gt 0)) -and (Test-Path -path $fullPath'\.git')){
@@ -107,14 +119,14 @@
 
                 foreach($package in $xmlFile.packages.package) {
                     if ($package.id -eq $packageName){
-                        if($addOrRemove -eq "add")
+                        if($updateOrRemove -eq "update")
                         {
                             if($package.version -ne $targetVersion)
                             {
                                 $package.version = $targetVersion
                             }
                         }
-                        if($addOrRemove -eq "remove")
+                        if($updateOrRemove -eq "remove")
                         {
                             $package.ParentNode.RemoveChild($package)
                         }
@@ -133,14 +145,14 @@
 
                 foreach($package in $xmlFile.project.itemgroup.packagereference) {
                     if ($package.include -eq $packageName){
-                        if($addOrRemove -eq "add")
+                        if($updateOrRemove -eq "update")
                         {
                             if($package.version -ne $targetVersion)
                             {
                                 $package.version = $targetVersion
                             }
                         }
-                        if($addOrRemove -eq "remove")
+                        if($updateOrRemove -eq "remove")
                         {
                             $package.ParentNode.RemoveChild($package)
                         }
@@ -155,61 +167,65 @@
             if($hasUpdate -eq $true)  {
                 $hasUpdate = $false
 
-                $solutionFile = Get-ChildItem $path -Filter *.sln -ErrorAction SilentlyContinue -Force
+                if($build -match "[yY]")
+                {
+
+                    $solutionFile = Get-ChildItem $path -Filter *.sln -ErrorAction SilentlyContinue -Force
             
-                #restore nuget packages
-                Write-Host "restoring nuget packages for" $solutionFile "..." -ForegroundColor Yellow
-                .\nuget restore $solutionFile.FullName
+                    #restore nuget packages
+                    Write-Host "restoring nuget packages for" $solutionFile "..." -ForegroundColor Yellow
+                    .\nuget restore $solutionFile.FullName
 
-                #build solution
-                $mArgs = @($solutionFile.FullName, '/t:ReBuild','/p:Configuration=Debug')
-                Write-Host "building" $solutionFile "..." -ForegroundColor Yellow
+                    #build solution
+                    $mArgs = @($solutionFile.FullName, '/t:ReBuild','/p:Configuration=Debug')
+                    Write-Host "building" $solutionFile "..." -ForegroundColor Yellow
 
-                $buildOutput = &$MsBuildExe $mArgs
-                if ($buildOutput -notcontains "Build succeeded."){
+                    $buildOutput = &$MsBuildExe $mArgs
+                    if ($buildOutput -notcontains "Build succeeded."){
         
-                    $exceptionList = @()
-                    $buildOutput | foreach {
-                        $matchInfo =  [regex]::match($_,'error [a-zA-Z]{2}\d{1,4}')
-
-                        if ($matchInfo.Success)
-                        {
-                            $exception = $buildOutput | Select-String -Pattern $matchInfo.Value -Context 0,0 | Out-String
-                            If ($exceptionList -notcontains $exception){
-                                $exceptionList += $exception
-                            }
-                        }    
-                    }
-
-                    Throw $exceptionList
-                    exit 1
-                }
-                else{
-                    Write-Host "build succeeded" -ForegroundColor Green
-                }
-        
-                #run unit tests
-                Write-Host "running unit tests for" $solutionFile "..." -ForegroundColor Yellow
-                $testsPath = $fullPath + '\tests\*\bin\Debug'
-                $assemblies = Get-ChildItem $testsPath -Recurse -Filter *.Tests.dll -ErrorAction SilentlyContinue -Force
-                foreach($assembly in $assemblies){
-                    $testOutput = &$xunitConsoleExe $assembly
-            
-                    if($testOutput -like "Exception"){
                         $exceptionList = @()
+                        $buildOutput | foreach {
+                            $matchInfo =  [regex]::match($_,'error [a-zA-Z]{2}\d{1,4}')
 
-                        $testOutput | foreach {
-                            $exception = $buildOutput | Select-String -Pattern ".*Exception$" -Context 0,0 | Out-String
-                            If ($exceptionList -notcontains $exception){
-                                $exceptionList += $exception
-                            }
+                            if ($matchInfo.Success)
+                            {
+                                $exception = $buildOutput | Select-String -Pattern $matchInfo.Value -Context 0,0 | Out-String
+                                If ($exceptionList -notcontains $exception){
+                                    $exceptionList += $exception
+                                }
+                            }    
                         }
 
                         Throw $exceptionList
                         exit 1
                     }
                     else{
-                        Write-Host "unit tests succeeded" -ForegroundColor Green
+                        Write-Host "build succeeded" -ForegroundColor Green
+                    }
+        
+                    #run unit tests
+                    Write-Host "running unit tests for" $solutionFile "..." -ForegroundColor Yellow
+                    $testsPath = $fullPath + '\tests\*\bin\Debug'
+                    $assemblies = Get-ChildItem $testsPath -Recurse -Filter *.Tests.dll -ErrorAction SilentlyContinue -Force
+                    foreach($assembly in $assemblies){
+                        $testOutput = &$xunitConsoleExe $assembly
+            
+                        if($testOutput -like "Exception"){
+                            $exceptionList = @()
+
+                            $testOutput | foreach {
+                                $exception = $buildOutput | Select-String -Pattern ".*Exception$" -Context 0,0 | Out-String
+                                If ($exceptionList -notcontains $exception){
+                                    $exceptionList += $exception
+                                }
+                            }
+
+                            Throw $exceptionList
+                            exit 1
+                        }
+                        else{
+                            Write-Host "unit tests succeeded" -ForegroundColor Green
+                        }
                     }
                 }
 
@@ -221,11 +237,11 @@
 
                 #commit
                 Write-host 'commit changes for' $path '...'
-                if($addOrRemove -eq "add")
+                if($updateOrRemove -eq "update")
                 {
                     $message = 'Updated '+$packageName+' version to '+$targetVersion
                 }
-                if($addOrRemove -eq "remove")
+                if($updateOrRemove -eq "remove")
                 {
                     $message = 'Removed '+$packageName
                 }
@@ -252,3 +268,12 @@
     
     Get-Date -Format g
 }
+
+aqovia-nuget-update -packageName Interxion.Utilities.Logging -targetVersion 1.0.0.190 -branchName CLOUD-594-migrate-all-portal-apps-except -updateOrRemove update -pushToRemote N -build N
+aqovia-nuget-update -packageName Interxion.Utilities.Logging.Core -targetVersion 1.0.0.190 -branchName CLOUD-594-migrate-all-portal-apps-except -updateOrRemove update -pushToRemote N -build N
+aqovia-nuget-update -packageName Interxion.Utilities.Logging.WebApi -targetVersion 1.0.0.190 -branchName CLOUD-594-migrate-all-portal-apps-except -updateOrRemove update -pushToRemote N -build N
+aqovia-nuget-update -packageName Interxion.Utilities.Logging.AspNetCore -targetVersion 1.0.0.190 -branchName CLOUD-594-migrate-all-portal-apps-except -updateOrRemove update -pushToRemote N -build N
+aqovia-nuget-update -packageName Nimbus -targetVersion 2.999.31 -branchName CLOUD-594-migrate-all-portal-apps-except -updateOrRemove update -pushToRemote N -build N
+aqovia-nuget-update -packageName Nimbus.InfrastructureContracts -targetVersion 2.999.31 -branchName CLOUD-594-migrate-all-portal-apps-except -updateOrRemove update -pushToRemote N -build N
+aqovia-nuget-update -packageName Nimbus.MessageContracts -targetVersion 2.999.31 -branchName CLOUD-594-migrate-all-portal-apps-except -updateOrRemove update -pushToRemote N -build N
+aqovia-nuget-update -packageName log4net -branchName CLOUD-594-migrate-all-portal-apps-except -updateOrRemove remove -pushToRemote N -build Y
