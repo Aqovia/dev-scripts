@@ -9,14 +9,17 @@
     .PARAMETER packageName 
     The name of the package that is wanted to change its version.
 
+    .PARAMETER parentPackageName 
+    The name of the parent package that exists that this package must be installed with.
+
     .PARAMETER targetVersion
     The new version of the package.
 
     .PARAMETER branchName
     The name of the branch which is used for pushing changes to remote.
 
-    .PARAMETER updateOrRemove
-    add or remove the nuget package. valid values : add, remove
+    .PARAMETER addOrupdateOrRemove
+    add or remove the nuget package. valid values : add, update, remove
 
     .PARAMETER pushToRemove
     push changes to remote branch. valid values : y, Y, n, N
@@ -26,7 +29,7 @@
 
     .EXAMPLE
     Working Directory: E:\dev\Interxion
-    Aqovia-Nuget-Update -packageName Powershell.Deployment -targetVersion 1.2.5.0 -branchName Update-PowershellDeployment-nuget-package -updateOrRemove update -pushToRemove N -build N
+    Aqovia-Nuget-Update -packageName Powershell.Deployment -targetVersion 1.2.5.0 -branchName Update-PowershellDeployment-nuget-package -addOrupdateOrRemove update -pushToRemove N -build N
 
     .NOTES
     You need to run this function as administrator.
@@ -35,6 +38,9 @@
     Param(
        [Parameter(Mandatory=$True,Position=1)]
        [string]$packageName,
+
+       [Parameter(Mandatory=$False)]
+       [string]$parentPackageName,
 	
        [Parameter(Mandatory=$False)]
        [string]$targetVersion,
@@ -43,7 +49,7 @@
        [string]$branchName,
 
        [Parameter(Mandatory=$True)]
-       [string]$updateOrRemove,
+       [string]$addOrupdateOrRemove,
 
        [Parameter(Mandatory=$True)]
        [string]$pushToRemote,
@@ -52,9 +58,20 @@
        [string]$build
     )
     
-    if($targetVersion -eq "" -and $updateOrRemove -eq "update")
+    if($targetVersion -eq "" -and $addOrupdateOrRemove -eq "update")
     {
-        Write-Host "If -updateOrRemove = update, then you must supply a -targetVersion"
+        Write-Host "If -addOrupdateOrRemove = update, then you must supply a -targetVersion"
+        exit
+    }
+
+    if($targetVersion -eq "" -and $addOrupdateOrRemove -eq "add")
+    {
+        Write-Host "If -addOrupdateOrRemove = add, then you must supply a -targetVersion"
+        exit
+    }
+    if($parentPackageName -eq "" -and $addOrupdateOrRemove -eq "add")
+    {
+        Write-Host "If -addOrupdateOrRemove = add, then you must supply a -parentPackageName"
         exit
     }
 
@@ -88,14 +105,16 @@
 
         $packageConfigFiles = Get-ChildItem $path -Recurse -Filter packages.config -ErrorAction SilentlyContinue -Force
 
-        $projectConfigFiles = Get-ChildItem $path -Recurse -Filter *.csproj -ErrorAction SilentlyContinue -Force | Where-Object {(Select-String -InputObject $_ -Pattern 'PackageReference' -Quiet) -eq $true}
+        $projectConfigFilesCore = Get-ChildItem $path -Recurse -Filter *.csproj -ErrorAction SilentlyContinue -Force | Where-Object {(Select-String -InputObject $_ -Pattern 'PackageReference' -Quiet) -eq $true}
+
+        $projectConfigFilesStandard = Get-ChildItem $path -Recurse -Filter *.csproj -ErrorAction SilentlyContinue -Force | Where-Object {(Select-String -InputObject $_ -Pattern '<Reference Include=' -Quiet) -eq $true}
     
         #if there is a packages.config or project config files with package references, and if there is a git repo
         if( ((($packageConfigFiles | measure).Count -gt 0) -or (($projectConfigFiles | measure).Count -gt 0)) -and (Test-Path -path $fullPath'\.git')){
             #fetch and checkout master
             Write-host 'fetch and checkout master for' $path '...'
 
-            $gitBranch = (((git status) -split '\n')[0]).Substring(10)
+            $gitBranch = (((git -C $fullPath status) -split '\n')[0]).Substring(10)
 
             if($gitBranch -ne $branchName)
             {
@@ -119,14 +138,14 @@
 
                 foreach($package in $xmlFile.packages.package) {
                     if ($package.id -eq $packageName){
-                        if($updateOrRemove -eq "update")
+                        if($addOrupdateOrRemove -eq "update")
                         {
                             if($package.version -ne $targetVersion)
                             {
                                 $package.version = $targetVersion
                             }
                         }
-                        if($updateOrRemove -eq "remove")
+                        if($addOrupdateOrRemove -eq "remove")
                         {
                             $package.ParentNode.RemoveChild($package)
                         }
@@ -135,24 +154,64 @@
                         $hasUpdate = $true
                     }
                 }
+                if($addOrupdateOrRemove -eq "add" -and $xmlFile.packages.package.id -contains $parentPackageName -and $xmlFile.packages.package.id -notcontains $packageName)
+                {
+                    $package = $xmlFile.CreateElement("package")
+                    $package.SetAttribute("id", $packageName)
+                    $package.SetAttribute("version", $targetVersion)
+                    $package.SetAttribute("targetFramework", "net452")
+
+                    $xmlFile.packages.AppendChild($package)
+                    $xmlFile.Save($configFile)
+                    $hasUpdate = $true
+                }
             }
 
-            #change csproj files
-            $projectConfigFiles | ForEach-Object {
+            #change csproj core files
+            $projectConfigFilesCore | ForEach-Object {
                 $configFile = $_.FullName
 
                 $xmlFile = (Get-Content $configFile) -as [Xml]
 
                 foreach($package in $xmlFile.project.itemgroup.packagereference) {
                     if ($package.include -eq $packageName){
-                        if($updateOrRemove -eq "update")
+                        if($addOrupdateOrRemove -eq "update")
                         {
                             if($package.version -ne $targetVersion)
                             {
                                 $package.version = $targetVersion
                             }
                         }
-                        if($updateOrRemove -eq "remove")
+                        if($addOrupdateOrRemove -eq "remove")
+                        {
+                            $package.ParentNode.RemoveChild($package)
+                        }
+                        Write-Host "saving csproj file..." -ForegroundColor green
+                        $xmlFile.Save($configFile)
+                        $hasUpdate = $true
+                    }
+                }
+                if($addOrupdateOrRemove -eq "add" -and $xmlFile.project.itemgroup.packagereference.include -contains $parentPackageName -and $xmlFile.project.itemgroup.packagereference.include -notcontains $packageName)
+                {
+                    $package = $xmlFile.CreateElement("PackageReference")
+                    $package.SetAttribute("include", $packageName)
+                    $package.SetAttribute("Version", $targetVersion)
+                    $xmlFile.project.itemgroup.packagereference.AppendChild($package)
+                    $xmlFile.Save($configFile)
+                    $hasUpdate = $true
+                }
+            }
+
+            #change csproj standard files - for removal
+            $projectConfigFilesStandard | ForEach-Object {
+                $configFile = $_.FullName
+
+                $xmlFile = (Get-Content $configFile) -as [Xml]
+
+                foreach($package in $xmlFile.project.itemgroup.reference) {
+                    if(($package.include -split ',' | Where({$_.Trim() -eq $packageName}) | measure).Count -gt 0)
+                    {
+                        if($addOrupdateOrRemove -eq "remove")
                         {
                             $package.ParentNode.RemoveChild($package)
                         }
@@ -162,7 +221,6 @@
                     }
                 }
             }
-
 
             if($hasUpdate -eq $true)  {
                 $hasUpdate = $false
@@ -232,18 +290,22 @@
                 if($gitBranch -ne $branchName)
                 {
                     Write-host 'check out branch' $branchName 'for' $path '...'
-                    git -C $fullPath checkout -b $branchName
+                    git -C $fullPath checkout -B $branchName
                 }
 
                 #commit
                 Write-host 'commit changes for' $path '...'
-                if($updateOrRemove -eq "update")
+                if($addOrupdateOrRemove -eq "update")
                 {
                     $message = 'Updated '+$packageName+' version to '+$targetVersion
                 }
-                if($updateOrRemove -eq "remove")
+                if($addOrupdateOrRemove -eq "remove")
                 {
                     $message = 'Removed '+$packageName
+                }
+                if($addOrupdateOrRemove -eq "add")
+                {
+                    $message = 'Added '+$packageName
                 }
                 
                 git -C $fullPath add .
@@ -269,11 +331,3 @@
     Get-Date -Format g
 }
 
-aqovia-nuget-update -packageName Interxion.Utilities.Logging -targetVersion 1.0.0.190 -branchName CLOUD-594-migrate-all-portal-apps-except -updateOrRemove update -pushToRemote N -build N
-aqovia-nuget-update -packageName Interxion.Utilities.Logging.Core -targetVersion 1.0.0.190 -branchName CLOUD-594-migrate-all-portal-apps-except -updateOrRemove update -pushToRemote N -build N
-aqovia-nuget-update -packageName Interxion.Utilities.Logging.WebApi -targetVersion 1.0.0.190 -branchName CLOUD-594-migrate-all-portal-apps-except -updateOrRemove update -pushToRemote N -build N
-aqovia-nuget-update -packageName Interxion.Utilities.Logging.AspNetCore -targetVersion 1.0.0.190 -branchName CLOUD-594-migrate-all-portal-apps-except -updateOrRemove update -pushToRemote N -build N
-aqovia-nuget-update -packageName Nimbus -targetVersion 2.999.31 -branchName CLOUD-594-migrate-all-portal-apps-except -updateOrRemove update -pushToRemote N -build N
-aqovia-nuget-update -packageName Nimbus.InfrastructureContracts -targetVersion 2.999.31 -branchName CLOUD-594-migrate-all-portal-apps-except -updateOrRemove update -pushToRemote N -build N
-aqovia-nuget-update -packageName Nimbus.MessageContracts -targetVersion 2.999.31 -branchName CLOUD-594-migrate-all-portal-apps-except -updateOrRemove update -pushToRemote N -build N
-aqovia-nuget-update -packageName log4net -branchName CLOUD-594-migrate-all-portal-apps-except -updateOrRemove remove -pushToRemote N -build Y
