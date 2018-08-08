@@ -64,6 +64,15 @@
     $hasUpdate = $false
     $workingDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath('.\')
 
+    #Settings object will instruct how the xml elements are written to the file
+    $settings = New-Object System.Xml.XmlWriterSettings
+    $settings.Indent = $true
+    #NewLineChars will affect all newlines
+    $settings.NewLineChars ="`r`n"
+    #Set an optional encoding, UTF-8 is the most used (without BOM)
+    $settings.Encoding = New-Object System.Text.UTF8Encoding( $false )
+
+
     #msbuild path
     $MsBuildExe = Resolve-Path "${env:ProgramFiles(x86)}\Microsoft Visual Studio*\MSBuild\*\bin\msbuild.exe" -ErrorAction SilentlyContinue
 
@@ -165,10 +174,10 @@
                             $package.ParentNode.RemoveChild($package)
                             
                             Write-Host "saving nuget packages.config file..." -ForegroundColor green
+                            $w = [System.Xml.XmlWriter]::Create($configFile, $settings)
                             $xmlFile.PreserveWhitespace = $true
-                            $xmlFile.Save($configFile)
+                            $xmlFile.Save($w)
                             $hasUpdate = $true
-
                         }
                     }
                 }
@@ -185,10 +194,10 @@
 
                             $package.ParentNode.RemoveChild($package)
                             Write-Host "saving csproj file $configFile" -ForegroundColor green
+                            $w = [System.Xml.XmlWriter]::Create($configFile, $settings)
                             $xmlFile.PreserveWhitespace = $true
-                            $xmlFile.Save($configFile)
+                            $xmlFile.Save($w)
                             $hasUpdate = $true
-
                         }
                     }
                 }
@@ -309,3 +318,4 @@
     
     Get-Date -Format g
 }
+
