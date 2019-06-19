@@ -64,7 +64,7 @@ $jsonFiles = Get-ChildItem -Path $directoryPath -Recurse  -Include *configuratio
 $jsonFiles | ForEach-Object {
         $jsonFile = $_.FullName
                   
-        $jsonObject = (Get-Content $jsonFile) | ConvertFrom-Json
+        $jsonObject = Get-Content $jsonFile -Raw | ConvertFrom-Json
 
         if (Get-Member -InputObject $jsonObject -Name "ServiceBus" -MemberType Properties)
         {
