@@ -177,6 +177,7 @@
                             $w = [System.Xml.XmlWriter]::Create($configFile, $settings)
                             $xmlFile.PreserveWhitespace = $true
                             $xmlFile.Save($w)
+			    $w.Close()
                             $hasUpdate = $true
                         }
                     }
@@ -197,6 +198,7 @@
                             $w = [System.Xml.XmlWriter]::Create($configFile, $settings)
                             $xmlFile.PreserveWhitespace = $true
                             $xmlFile.Save($w)
+			    $w.Close()
                             $hasUpdate = $true
                         }
                     }
